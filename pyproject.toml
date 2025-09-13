@@ -1,0 +1,13 @@
+[project]
+name = "passportimagecreater"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.9, <4"
+dependencies = [
+    "numpy",
+    "onnxruntime==1.18.1",
+    "opencv-python",
+    "pillow",
+    "rembg",
+]
