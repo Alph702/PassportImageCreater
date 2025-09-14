@@ -2,7 +2,7 @@ import os
 import cv2
 import mediapipe as mp
 import numpy as np
-from rembg import remove
+import onnxruntime as ort
 from PIL import Image
 import streamlit as st
 
@@ -10,12 +10,48 @@ import streamlit as st
 mp_face = mp.solutions.face_detection
 face_detection = mp_face.FaceDetection(model_selection=0, min_detection_confidence=0.6)
 
+# Load ONNX model
+ort_sess = ort.InferenceSession("modnet.onnx", providers=["CPUExecutionProvider"])
+
 background = Image.open(r"blue_image.png")
+
+def preprocess(image: Image.Image, size=512):
+    im = image.convert("RGB").resize((size, size), Image.BILINEAR)
+    im = np.array(im).astype(np.float32) / 255.0
+    im = np.transpose(im, (2, 0, 1))  # HWC -> CHW
+    im = np.expand_dims(im, 0)        # add batch dim
+    return im
+
+def postprocess(mask, orig_size):
+    mask = mask.squeeze()
+    mask = (mask - mask.min()) / (mask.max() - mask.min() + 1e-8)  # normalize
+    mask = (mask * 255).astype(np.uint8)
+    mask = cv2.resize(mask, orig_size, interpolation=cv2.INTER_LINEAR)
+    return mask
+
+def remove_bg_modnet(image: Image.Image, ort_sess: ort.InferenceSession):
+    orig_size = image.size
+    input_tensor = preprocess(image)
+
+    # Run inference
+    inputs = {ort_sess.get_inputs()[0].name: input_tensor}
+    pred = ort_sess.run(None, inputs)[0]
+
+    # Postprocess mask
+    mask = postprocess(pred, orig_size)
+
+    # Apply mask as alpha channel
+    image_rgb = image.convert("RGB")
+    result_rgb = np.array(image_rgb)
+
+    result_rgba = np.dstack((result_rgb, mask))
+
+    return Image.fromarray(result_rgba)
 
 def process_image(image):
     img = Image.open(image)
 
-    fg = remove(img)
+    fg = remove_bg_modnet(img, ort_sess)
     bg_resized = background.resize(img.size)
     bg_resized.paste(fg, (0, 0), fg)
 
@@ -79,4 +115,5 @@ def main():
         
                 st.success("Images prossesed successful and saved in **output** folder")
 
-main()
+if __name__ == '__main__':
+    main()

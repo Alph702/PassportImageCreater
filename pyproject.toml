@@ -10,6 +10,5 @@ dependencies = [
     "onnxruntime==1.18.1",
     "opencv-python",
     "pillow",
-    "rembg",
     "streamlit>=1.49.1",
 ]
