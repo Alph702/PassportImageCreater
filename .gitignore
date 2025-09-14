@@ -12,3 +12,6 @@ wheels/
 # Project testing files
 images/
 output/
+
+# used for docs gen
+GEMINI.md
