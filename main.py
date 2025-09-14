@@ -1,14 +1,16 @@
 import os
-from cv2 import CascadeClassifier, cvtColor, COLOR_BGR2GRAY
+import cv2
+import mediapipe as mp
 import numpy as np
 from rembg import remove
 from PIL import Image
 import streamlit as st
 
-background = Image.open(r"blue_image.png")
+# Initialize Mediapipe Face Detection
+mp_face = mp.solutions.face_detection
+face_detection = mp_face.FaceDetection(model_selection=0, min_detection_confidence=0.6)
 
-# Load the Haar cascade file for face detection
-face_cascade = CascadeClassifier('haarcascade_frontalface_default.xml')
+background = Image.open(r"blue_image.png")
 
 def process_image(image):
     img = Image.open(image)
@@ -22,14 +24,18 @@ def process_image(image):
     # Convert RGB to BGR
     img_cv = img_cv[:, :, ::-1].copy()
 
-    # Convert to grayscale for face detection
-    gray = cvtColor(img_cv, COLOR_BGR2GRAY)
-    # Detect faces with adjusted parameters
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3)
+    # Convert BGR (OpenCV) → RGB (Mediapipe)
+    rgb_frame = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB)
+    results = face_detection.process(rgb_frame)
 
-    if len(faces) > 0:
+    if results.detections:
         # Get the first face found
-        (x, y, w, h) = faces[0]
+        detection = results.detections[0]
+        bboxC = detection.location_data.relative_bounding_box
+        ih, iw, _ = img_cv.shape
+        x, y, w, h = int(bboxC.xmin * iw), int(bboxC.ymin * ih), \
+                     int(bboxC.width * iw), int(bboxC.height * ih)
+        
         # Add proportional padding
         padding_w = int(w * 0.4)
         padding_h = int(h * 0.4)
