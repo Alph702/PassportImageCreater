@@ -16,6 +16,16 @@ ort_sess = ort.InferenceSession("modnet.onnx", providers=["CPUExecutionProvider"
 background = Image.open(r"blue_image.png")
 
 def preprocess(image: Image.Image, size=512):
+    """
+    Prepare a PIL Image for ModNet ONNX inference by converting to RGB, resizing, normalizing, and arranging axes.
+    
+    Parameters:
+        image (PIL.Image.Image): Input image; will be converted to RGB if necessary.
+        size (int): Target square size (pixels) for both width and height; default is 512.
+    
+    Returns:
+        numpy.ndarray: Float32 array with shape (1, 3, size, size), values in [0.0, 1.0], in CHW order with a leading batch dimension.
+    """
     im = image.convert("RGB").resize((size, size), Image.BILINEAR)
     im = np.array(im).astype(np.float32) / 255.0
     im = np.transpose(im, (2, 0, 1))  # HWC -> CHW
@@ -23,6 +33,16 @@ def preprocess(image: Image.Image, size=512):
     return im
 
 def postprocess(mask, orig_size):
+    """
+    Convert a model output tensor into a 2D uint8 alpha mask resized to the original image size.
+    
+    Parameters:
+        mask (np.ndarray): Model prediction tensor or array (batch/channel dimensions allowed) containing raw scores.
+        orig_size (tuple[int, int]): Target size as (width, height) in pixels for the output mask (OpenCV dsize ordering).
+    
+    Returns:
+        np.ndarray: 2D uint8 mask in range [0, 255] resized to orig_size.
+    """
     mask = mask.squeeze()
     mask = (mask - mask.min()) / (mask.max() - mask.min() + 1e-8)  # normalize
     mask = (mask * 255).astype(np.uint8)
@@ -30,6 +50,17 @@ def postprocess(mask, orig_size):
     return mask
 
 def remove_bg_modnet(image: Image.Image, ort_sess: ort.InferenceSession):
+    """
+    Remove the background from a PIL image using a ModNet ONNX inference session and return an RGBA image.
+    
+    Runs the provided ONNX Runtime session to predict a foreground alpha mask for the input image, postprocesses that mask to the original image size, and composes it as the alpha channel of the original image (converted to RGB). The returned image is a PIL Image in RGBA mode where the alpha channel encodes foreground transparency produced by ModNet.
+    
+    Parameters:
+        image (PIL.Image.Image): Input image to process.
+    
+    Returns:
+        PIL.Image.Image: RGBA image with the predicted alpha mask applied as the alpha channel.
+    """
     orig_size = image.size
     input_tensor = preprocess(image)
 
@@ -49,6 +80,21 @@ def remove_bg_modnet(image: Image.Image, ort_sess: ort.InferenceSession):
     return Image.fromarray(result_rgba)
 
 def process_image(image):
+    """
+    Process an input image by removing its background, compositing the foreground onto a blue background, and (if a face is detected) cropping to the face region with padding.
+    
+    The function:
+    - Opens the provided image.
+    - Removes the background using the ModNet ONNX pipeline and pastes the resulting RGBA foreground onto a preloaded blue background resized to the input image size.
+    - Runs Mediapipe face detection on the composited image; if at least one face is detected it crops the image to the first detection's bounding box plus 40% padding in both width and height (coordinates clamped to image bounds).
+    - Returns the composed (and possibly cropped) PIL.Image.
+    
+    Parameters:
+        image: A path-like object or file-like object accepted by PIL.Image.open representing the image to process.
+    
+    Returns:
+        PIL.Image.Image: The processed image (composited on the blue background and cropped to the face region when detected).
+    """
     img = Image.open(image)
 
     fg = remove_bg_modnet(img, ort_sess)
@@ -86,6 +132,23 @@ def process_image(image):
 
 
 def main():
+    """
+    Display a Streamlit UI to upload images, run batch processing, and show/save the processed results.
+    
+    This function builds a simple Streamlit app flow:
+    - Ensures a session-state flag ('button_state') exists to enable/disable the Process button.
+    - Shows a title and a file uploader that accepts multiple JPG/PNG images.
+    - When files are uploaded, enables a "Process images" button. While processing, a spinner is shown.
+    - If the user clicks "Process images", an optional "Stop" button can re-disable processing.
+    - Processes each uploaded file with process_image(), displays the resulting image in a three-column layout (round-robin), and saves each processed image to the local "output/" directory using the original filename.
+    
+    Side effects:
+    - Writes output image files to the "output/" folder.
+    - Modifies Streamlit session state ('button_state') and renders UI elements.
+    
+    Returns:
+    - None
+    """
     if 'button_state' not in st.session_state:
         st.session_state.button_state = True
 
