@@ -10,10 +10,22 @@ import streamlit as st
 mp_face = mp.solutions.face_detection
 face_detection = mp_face.FaceDetection(model_selection=0, min_detection_confidence=0.6)
 
-# Load ONNX model
-ort_sess = ort.InferenceSession("modnet.onnx", providers=["CPUExecutionProvider"])
+@st.cache_resource(show_spinner=False)
+def get_ort_sess():
+    providers = [p for p in ort.get_available_providers() if p] or ["CPUExecutionProvider"]
+    try:
+        return ort.InferenceSession("modnet.onnx", providers=providers)
+    except Exception as e:
+        st.error(f"Failed to load model modnet.onnx: {e}")
+        raise
 
-background = Image.open(r"blue_image.png")
+@st.cache_resource(show_spinner=False)
+def get_background():
+    try:
+        return Image.open("blue_image.png").convert("RGB")
+    except Exception as e:
+        st.error(f"Missing or unreadable background image blue_image.png: {e}")
+        raise
 
 def preprocess(image: Image.Image, size=512):
     im = image.convert("RGB").resize((size, size), Image.BILINEAR)
